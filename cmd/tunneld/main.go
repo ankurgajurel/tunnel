@@ -1,18 +1,23 @@
 package main
 
 import (
-	"fmt"
+	"log/slog"
+	"os"
 
+	"github.com/ankurgajurel/tunnel/internal/config"
 	"github.com/ankurgajurel/tunnel/internal/server"
 )
 
 func main() {
-	srv := server.New(":8080")
+	cfg := config.LoadServer()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	fmt.Println("server is listening in :8080")
+	srv := server.New(cfg.HTTPAddr, logger)
+
+	logger.Info("server is listening", "addr", cfg.HTTPAddr)
 
 	err := srv.ListenAndServe()
 	if err != nil {
-		fmt.Println("server error", err)
+		logger.Error("server error", "error", err)
 	}
 }
