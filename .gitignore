@@ -1,0 +1,15 @@
+.DS_Store
+
+# Go build outputs
+/bin/
+/dist/
+*.test
+*.out
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+docs/
+AGENTS.md
