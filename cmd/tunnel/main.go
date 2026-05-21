@@ -31,10 +31,6 @@ type agentConnectRequest struct {
 	TargetURL string `json:"target_url"`
 }
 
-type pollRequest struct {
-	TunnelID string `json:"tunnel_id"`
-}
-
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("usage: tunnel <command>")
@@ -159,7 +155,7 @@ func runHTTP() {
 	for i := 1; i <= workers; i++ {
 		go runWorker(i, serverURL, cfg.Token, payload.ID, targetURL)
 	}
-	runTunnel(serverURL, cfg.Token, payload.ID, targetURL)
+	select {}
 }
 
 func parseWorkers(args []string) (int, error) {
@@ -239,49 +235,6 @@ func workerURL(serverURL string, tunnelID string) (string, error) {
 	return u.String(), nil
 }
 
-func runTunnel(serverURL string, token string, tunnelID string, targetURL string) {
-	client := &http.Client{Timeout: 70 * time.Second}
-
-	for {
-		req, ok, err := pollWork(client, serverURL, token, tunnelID)
-		if err != nil {
-			fmt.Println("poll failed:", err)
-			time.Sleep(time.Second)
-			continue
-		}
-		if !ok {
-			continue
-		}
-
-		resp := forwardLocal(client, targetURL, req)
-		if err := sendResponse(client, serverURL, token, resp); err != nil {
-			fmt.Println("send response failed:", err)
-		}
-	}
-}
-
-func pollWork(client *http.Client, serverURL string, token string, tunnelID string) (protocol.Request, bool, error) {
-	resp, err := postJSON(client, serverURL+"/_agent/poll", token, pollRequest{TunnelID: tunnelID})
-	if err != nil {
-		return protocol.Request{}, false, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNoContent {
-		return protocol.Request{}, false, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return protocol.Request{}, false, fmt.Errorf("poll returned %s", resp.Status)
-	}
-
-	var req protocol.Request
-	if err := json.NewDecoder(resp.Body).Decode(&req); err != nil {
-		return protocol.Request{}, false, err
-	}
-
-	return req, true, nil
-}
-
 func forwardLocal(client *http.Client, targetURL string, req protocol.Request) protocol.Response {
 	localReq, err := http.NewRequest(req.Method, targetURL+req.Path, bytes.NewReader(req.Body))
 	if err != nil {
@@ -307,20 +260,6 @@ func forwardLocal(client *http.Client, targetURL string, req protocol.Request) p
 		Header: resp.Header,
 		Body:   body,
 	}
-}
-
-func sendResponse(client *http.Client, serverURL string, token string, response protocol.Response) error {
-	resp, err := postJSON(client, serverURL+"/_agent/respond", token, response)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("respond returned %s", resp.Status)
-	}
-
-	return nil
 }
 
 func postJSON(client *http.Client, url string, token string, value any) (*http.Response, error) {

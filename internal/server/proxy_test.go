@@ -81,6 +81,5 @@ func testServer(baseDomain string) *Server {
 			BaseDomain: baseDomain,
 		},
 		registry: NewRegistry(),
-		pending:  make(map[string]*pendingRequest),
 	}
 }

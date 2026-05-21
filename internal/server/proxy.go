@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -13,15 +12,6 @@ import (
 )
 
 const maxBodyBytes = 10 << 20
-
-type pendingRequest struct {
-	request protocol.Request
-	reply   chan protocol.Response
-}
-
-type pollRequest struct {
-	TunnelID string `json:"tunnel_id"`
-}
 
 func (s *Server) publicHandler(w http.ResponseWriter, r *http.Request) {
 	tunnel, path, ok := s.findTunnel(r)
@@ -49,38 +39,10 @@ func (s *Server) publicHandler(w http.ResponseWriter, r *http.Request) {
 		Body:   body,
 	}
 
-	if s.proxyViaWorker(w, r, tunnel, req) {
-		return
-	}
-
-	pending := &pendingRequest{
-		request: req,
-		reply:   make(chan protocol.Response, 1),
-	}
-
-	s.remember(pending)
-	defer s.forget(id)
-
-	select {
-	case tunnel.Requests <- pending:
-	case <-time.After(5 * time.Second):
-		http.Error(w, "tunnel is busy", http.StatusServiceUnavailable)
-		return
-	case <-r.Context().Done():
-		return
-	}
-
-	select {
-	case resp := <-pending.reply:
-		writeProxyResponse(w, resp)
-	case <-time.After(60 * time.Second):
-		http.Error(w, "tunnel response timed out", http.StatusGatewayTimeout)
-	case <-r.Context().Done():
-		return
-	}
+	s.proxyViaWorker(w, r, tunnel, req)
 }
 
-func (s *Server) proxyViaWorker(w http.ResponseWriter, r *http.Request, tunnel *Tunnel, req protocol.Request) bool {
+func (s *Server) proxyViaWorker(w http.ResponseWriter, r *http.Request, tunnel *Tunnel, req protocol.Request) {
 	select {
 	case worker := <-tunnel.Workers:
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
@@ -90,7 +52,7 @@ func (s *Server) proxyViaWorker(w http.ResponseWriter, r *http.Request, tunnel *
 		if err != nil {
 			worker.Close()
 			http.Error(w, "worker request failed", http.StatusBadGateway)
-			return true
+			return
 		}
 
 		select {
@@ -100,70 +62,12 @@ func (s *Server) proxyViaWorker(w http.ResponseWriter, r *http.Request, tunnel *
 		}
 
 		writeProxyResponse(w, resp)
-		return true
-	default:
-		return false
-	}
-}
-
-func (s *Server) pollHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAgentAuth(w, r) {
 		return
-	}
-
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req pollRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	tunnel, ok := s.registry.GetByID(req.TunnelID)
-	if !ok {
-		http.Error(w, "tunnel not found", http.StatusNotFound)
-		return
-	}
-
-	select {
-	case pending := <-tunnel.Requests:
-		writeJSON(w, http.StatusOK, pending.request)
-	case <-time.After(30 * time.Second):
-		w.WriteHeader(http.StatusNoContent)
+	case <-time.After(5 * time.Second):
+		http.Error(w, "tunnel is busy", http.StatusServiceUnavailable)
 	case <-r.Context().Done():
 		return
 	}
-}
-
-func (s *Server) respondHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAgentAuth(w, r) {
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var resp protocol.Response
-	if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	pending, ok := s.take(resp.ID)
-	if !ok {
-		http.Error(w, "request not found", http.StatusNotFound)
-		return
-	}
-
-	pending.reply <- resp
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) findTunnel(r *http.Request) (*Tunnel, string, bool) {
@@ -224,29 +128,4 @@ func cleanHeader(header http.Header) http.Header {
 		clean.Del(key)
 	}
 	return clean
-}
-
-func (s *Server) remember(req *pendingRequest) {
-	s.pendingMu.Lock()
-	defer s.pendingMu.Unlock()
-
-	s.pending[req.request.ID] = req
-}
-
-func (s *Server) forget(id string) {
-	s.pendingMu.Lock()
-	defer s.pendingMu.Unlock()
-
-	delete(s.pending, id)
-}
-
-func (s *Server) take(id string) (*pendingRequest, bool) {
-	s.pendingMu.Lock()
-	defer s.pendingMu.Unlock()
-
-	req, ok := s.pending[id]
-	if ok {
-		delete(s.pending, id)
-	}
-	return req, ok
 }

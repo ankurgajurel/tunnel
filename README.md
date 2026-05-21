@@ -142,5 +142,4 @@ make release VERSION=v0.1.0
 - shared token auth
 - no dashboard
 - no tcp tunnels
-- agent transport is still simple http polling
-
+- agent transport uses websocket workers
