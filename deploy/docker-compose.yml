@@ -10,7 +10,8 @@ services:
       - "8080"
 
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ./caddy
     restart: unless-stopped
     env_file:
       - ../.env

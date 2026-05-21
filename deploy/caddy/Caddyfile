@@ -1,5 +1,7 @@
-# Stock Caddy can serve this HTTP setup directly.
-# Wildcard HTTPS needs a Caddy build with DNS-01 support for your DNS provider.
-http://{$TUNNEL_BASE_DOMAIN}, http://*.{$TUNNEL_BASE_DOMAIN} {
+{
+	acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
+}
+
+{$TUNNEL_BASE_DOMAIN}, *.{$TUNNEL_BASE_DOMAIN} {
 	reverse_proxy tunneld:8080
 }
