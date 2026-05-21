@@ -11,6 +11,7 @@ type Server struct {
 	HTTPAddr   string
 	BaseDomain string
 	PublicURL  string
+	Token      string
 }
 
 func LoadServer() Server {
@@ -20,6 +21,7 @@ func LoadServer() Server {
 		HTTPAddr:   envString("TUNNEL_HTTP_ADDR", ":8080"),
 		BaseDomain: envString("TUNNEL_BASE_DOMAIN", "localhost"),
 		PublicURL:  envString("TUNNEL_PUBLIC_URL", "http://localhost:8080"),
+		Token:      envString("TUNNEL_SERVER_TOKEN", "dev-token"),
 	}
 }
 

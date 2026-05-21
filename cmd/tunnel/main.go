@@ -92,7 +92,7 @@ func runHTTP() {
 
 	targetURL := "http://" + addr
 
-	connectResp, err := postJSON(http.DefaultClient, serverURL+"/_agent/connect", agentConnectRequest{
+	connectResp, err := postJSON(http.DefaultClient, serverURL+"/_agent/connect", cfg.Token, agentConnectRequest{
 		TargetURL: targetURL,
 	})
 	if err != nil {
@@ -117,14 +117,14 @@ func runHTTP() {
 	fmt.Println("exposing local target", targetURL)
 	fmt.Println("waiting for requests")
 
-	runTunnel(serverURL, payload.ID, targetURL)
+	runTunnel(serverURL, cfg.Token, payload.ID, targetURL)
 }
 
-func runTunnel(serverURL string, tunnelID string, targetURL string) {
+func runTunnel(serverURL string, token string, tunnelID string, targetURL string) {
 	client := &http.Client{Timeout: 70 * time.Second}
 
 	for {
-		req, ok, err := pollWork(client, serverURL, tunnelID)
+		req, ok, err := pollWork(client, serverURL, token, tunnelID)
 		if err != nil {
 			fmt.Println("poll failed:", err)
 			time.Sleep(time.Second)
@@ -135,14 +135,14 @@ func runTunnel(serverURL string, tunnelID string, targetURL string) {
 		}
 
 		resp := forwardLocal(client, targetURL, req)
-		if err := sendResponse(client, serverURL, resp); err != nil {
+		if err := sendResponse(client, serverURL, token, resp); err != nil {
 			fmt.Println("send response failed:", err)
 		}
 	}
 }
 
-func pollWork(client *http.Client, serverURL string, tunnelID string) (protocol.Request, bool, error) {
-	resp, err := postJSON(client, serverURL+"/_agent/poll", pollRequest{TunnelID: tunnelID})
+func pollWork(client *http.Client, serverURL string, token string, tunnelID string) (protocol.Request, bool, error) {
+	resp, err := postJSON(client, serverURL+"/_agent/poll", token, pollRequest{TunnelID: tunnelID})
 	if err != nil {
 		return protocol.Request{}, false, err
 	}
@@ -190,8 +190,8 @@ func forwardLocal(client *http.Client, targetURL string, req protocol.Request) p
 	}
 }
 
-func sendResponse(client *http.Client, serverURL string, response protocol.Response) error {
-	resp, err := postJSON(client, serverURL+"/_agent/respond", response)
+func sendResponse(client *http.Client, serverURL string, token string, response protocol.Response) error {
+	resp, err := postJSON(client, serverURL+"/_agent/respond", token, response)
 	if err != nil {
 		return err
 	}
@@ -204,11 +204,19 @@ func sendResponse(client *http.Client, serverURL string, response protocol.Respo
 	return nil
 }
 
-func postJSON(client *http.Client, url string, value any) (*http.Response, error) {
+func postJSON(client *http.Client, url string, token string, value any) (*http.Response, error) {
 	body, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
 
-	return client.Post(url, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	return client.Do(req)
 }

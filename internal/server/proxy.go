@@ -70,6 +70,10 @@ func (s *Server) publicHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pollHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAgentAuth(w, r) {
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -99,6 +103,10 @@ func (s *Server) pollHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) respondHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAgentAuth(w, r) {
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

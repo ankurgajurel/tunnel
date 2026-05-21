@@ -4,6 +4,7 @@ import "github.com/joho/godotenv"
 
 type Agent struct {
 	ServerURL string
+	Token     string
 }
 
 func LoadAgent() Agent {
@@ -11,5 +12,6 @@ func LoadAgent() Agent {
 
 	return Agent{
 		ServerURL: envString("TUNNEL_SERVER_URL", "http://localhost:8080"),
+		Token:     envString("TUNNEL_TOKEN", "dev-token"),
 	}
 }

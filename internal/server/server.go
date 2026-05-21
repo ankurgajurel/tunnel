@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,6 +62,10 @@ type agentConnectRequest struct {
 }
 
 func (s *Server) agentConnHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAgentAuth(w, r) {
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -127,6 +132,16 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) requireAgentAuth(w http.ResponseWriter, r *http.Request) bool {
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.Token)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
