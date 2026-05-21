@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -40,15 +41,21 @@ func (s *Server) publicHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := "req_" + time.Now().Format("20060102150405.000000000")
+	req := protocol.Request{
+		ID:     id,
+		Method: r.Method,
+		Path:   path,
+		Header: cleanHeader(r.Header),
+		Body:   body,
+	}
+
+	if s.proxyViaWorker(w, r, tunnel, req) {
+		return
+	}
+
 	pending := &pendingRequest{
-		request: protocol.Request{
-			ID:     id,
-			Method: r.Method,
-			Path:   path,
-			Header: cleanHeader(r.Header),
-			Body:   body,
-		},
-		reply: make(chan protocol.Response, 1),
+		request: req,
+		reply:   make(chan protocol.Response, 1),
 	}
 
 	s.remember(pending)
@@ -70,6 +77,32 @@ func (s *Server) publicHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tunnel response timed out", http.StatusGatewayTimeout)
 	case <-r.Context().Done():
 		return
+	}
+}
+
+func (s *Server) proxyViaWorker(w http.ResponseWriter, r *http.Request, tunnel *Tunnel, req protocol.Request) bool {
+	select {
+	case worker := <-tunnel.Workers:
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+
+		resp, err := worker.RoundTrip(ctx, req)
+		if err != nil {
+			worker.Close()
+			http.Error(w, "worker request failed", http.StatusBadGateway)
+			return true
+		}
+
+		select {
+		case tunnel.Workers <- worker:
+		default:
+			worker.Close()
+		}
+
+		writeProxyResponse(w, resp)
+		return true
+	default:
+		return false
 	}
 }
 

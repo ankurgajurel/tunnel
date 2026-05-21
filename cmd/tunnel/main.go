@@ -18,6 +18,7 @@ import (
 	"github.com/ankurgajurel/tunnel/internal/config"
 	"github.com/ankurgajurel/tunnel/internal/protocol"
 	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
 )
 
 type agentConnectResponse struct {
@@ -148,20 +149,20 @@ func runHTTP() {
 	fmt.Println("exposing local target", targetURL)
 	fmt.Println("waiting for requests")
 
-	go runWorker(serverURL, cfg.Token, payload.ID)
+	go runWorker(serverURL, cfg.Token, payload.ID, targetURL)
 	runTunnel(serverURL, cfg.Token, payload.ID, targetURL)
 }
 
-func runWorker(serverURL string, token string, tunnelID string) {
+func runWorker(serverURL string, token string, tunnelID string, targetURL string) {
 	for {
-		if err := connectWorker(serverURL, token, tunnelID); err != nil {
+		if err := connectWorker(serverURL, token, tunnelID, targetURL); err != nil {
 			fmt.Println("websocket worker disconnected:", err)
 			time.Sleep(time.Second)
 		}
 	}
 }
 
-func connectWorker(serverURL string, token string, tunnelID string) error {
+func connectWorker(serverURL string, token string, tunnelID string, targetURL string) error {
 	workURL, err := workerURL(serverURL, tunnelID)
 	if err != nil {
 		return err
@@ -181,7 +182,13 @@ func connectWorker(serverURL string, token string, tunnelID string) error {
 
 	fmt.Println("websocket worker connected")
 	for {
-		if _, _, err := conn.Read(ctx); err != nil {
+		var req protocol.Request
+		if err := wsjson.Read(ctx, conn, &req); err != nil {
+			return err
+		}
+
+		resp := forwardLocal(http.DefaultClient, targetURL, req)
+		if err := wsjson.Write(ctx, conn, resp); err != nil {
 			return err
 		}
 	}

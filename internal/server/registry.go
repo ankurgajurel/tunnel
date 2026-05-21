@@ -16,6 +16,7 @@ type Tunnel struct {
 	PublicURL string
 	CreatedAt time.Time
 	Requests  chan *pendingRequest
+	Workers   chan *Worker
 }
 
 type Registry struct {
@@ -48,6 +49,7 @@ func (r *Registry) Register(subdomain string, targetURL string, publicURL string
 		PublicURL: publicURL,
 		CreatedAt: time.Now(),
 		Requests:  make(chan *pendingRequest, 64),
+		Workers:   make(chan *Worker, 16),
 	}
 
 	r.byID[tunnel.ID] = tunnel
