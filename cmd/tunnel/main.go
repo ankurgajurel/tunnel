@@ -114,6 +114,12 @@ func runHTTP() {
 		return
 	}
 
+	workers, err := parseWorkers(os.Args[3:])
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
@@ -147,22 +153,44 @@ func runHTTP() {
 	fmt.Println("tunnel ID", payload.ID)
 	fmt.Println("public URL", payload.PublicURL)
 	fmt.Println("exposing local target", targetURL)
+	fmt.Println("websocket workers", workers)
 	fmt.Println("waiting for requests")
 
-	go runWorker(serverURL, cfg.Token, payload.ID, targetURL)
+	for i := 1; i <= workers; i++ {
+		go runWorker(i, serverURL, cfg.Token, payload.ID, targetURL)
+	}
 	runTunnel(serverURL, cfg.Token, payload.ID, targetURL)
 }
 
-func runWorker(serverURL string, token string, tunnelID string, targetURL string) {
+func parseWorkers(args []string) (int, error) {
+	if len(args) == 0 {
+		return 4, nil
+	}
+	if len(args) != 2 || args[0] != "--workers" {
+		return 0, fmt.Errorf("usage: tunnel http <port> [--workers n]")
+	}
+
+	workers, err := strconv.Atoi(args[1])
+	if err != nil {
+		return 0, fmt.Errorf("workers must be a number")
+	}
+	if workers < 1 || workers > 16 {
+		return 0, fmt.Errorf("workers must be between 1 and 16")
+	}
+
+	return workers, nil
+}
+
+func runWorker(id int, serverURL string, token string, tunnelID string, targetURL string) {
 	for {
-		if err := connectWorker(serverURL, token, tunnelID, targetURL); err != nil {
-			fmt.Println("websocket worker disconnected:", err)
+		if err := connectWorker(id, serverURL, token, tunnelID, targetURL); err != nil {
+			fmt.Println("websocket worker disconnected", "worker", id, "error", err)
 			time.Sleep(time.Second)
 		}
 	}
 }
 
-func connectWorker(serverURL string, token string, tunnelID string, targetURL string) error {
+func connectWorker(id int, serverURL string, token string, tunnelID string, targetURL string) error {
 	workURL, err := workerURL(serverURL, tunnelID)
 	if err != nil {
 		return err
@@ -180,7 +208,7 @@ func connectWorker(serverURL string, token string, tunnelID string, targetURL st
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
-	fmt.Println("websocket worker connected")
+	fmt.Println("websocket worker connected", "worker", id)
 	for {
 		var req protocol.Request
 		if err := wsjson.Read(ctx, conn, &req); err != nil {
