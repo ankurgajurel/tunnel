@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,8 +13,9 @@ import (
 )
 
 type Server struct {
-	cfg    config.Server
-	logger *slog.Logger
+	cfg      config.Server
+	logger   *slog.Logger
+	registry *Registry
 }
 
 func New(cfg config.Server, logger *slog.Logger) *http.Server {
@@ -21,8 +24,9 @@ func New(cfg config.Server, logger *slog.Logger) *http.Server {
 	}
 
 	server := &Server{
-		cfg:    cfg,
-		logger: logger,
+		cfg:      cfg,
+		logger:   logger,
+		registry: NewRegistry(),
 	}
 
 	mux := http.NewServeMux()
@@ -40,7 +44,13 @@ func New(cfg config.Server, logger *slog.Logger) *http.Server {
 }
 
 type agentConnectResponse struct {
+	ID        string `json:"id"`
+	Subdomain string `json:"subdomain"`
 	PublicURL string `json:"public_url"`
+}
+
+type agentConnectRequest struct {
+	TargetURL string `json:"target_url"`
 }
 
 func (s *Server) agentConnHandler(w http.ResponseWriter, r *http.Request) {
@@ -50,10 +60,56 @@ func (s *Server) agentConnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	publicURL := strings.TrimRight(s.cfg.PublicURL, "/")
+	var req agentConnectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req.TargetURL = strings.TrimSpace(req.TargetURL)
+	if req.TargetURL == "" {
+		http.Error(w, "target_url is required", http.StatusBadRequest)
+		return
+	}
+
+	subdomain := randomSubdomain()
+	publicURL := s.publicURLFor(subdomain)
+
+	tunnel, err := s.registry.Register(subdomain, req.TargetURL, publicURL)
+	if errors.Is(err, errSubdomainTaken) {
+		http.Error(w, "subdomain already taken", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		http.Error(w, "register tunnel failed", http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Info("tunnel registered",
+		"tunnel_id", tunnel.ID,
+		"subdomain", tunnel.Subdomain,
+		"target_url", tunnel.TargetURL,
+	)
+
 	writeJSON(w, http.StatusOK, agentConnectResponse{
-		PublicURL: publicURL,
+		ID:        tunnel.ID,
+		Subdomain: tunnel.Subdomain,
+		PublicURL: tunnel.PublicURL,
 	})
+}
+
+func (s *Server) publicURLFor(subdomain string) string {
+	publicURL := strings.TrimRight(s.cfg.PublicURL, "/")
+	if s.cfg.BaseDomain == "localhost" {
+		return publicURL + "/t/" + subdomain
+	}
+
+	scheme := "https"
+	if strings.HasPrefix(publicURL, "http://") {
+		scheme = "http"
+	}
+
+	return fmt.Sprintf("%s://%s.%s", scheme, subdomain, s.cfg.BaseDomain)
 }
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,7 +15,13 @@ import (
 )
 
 type agentConnectResponse struct {
+	ID        string `json:"id"`
+	Subdomain string `json:"subdomain"`
 	PublicURL string `json:"public_url"`
+}
+
+type agentConnectRequest struct {
+	TargetURL string `json:"target_url"`
 }
 
 func main() {
@@ -79,7 +86,15 @@ func runHTTP() {
 
 	targetURL := "http://" + addr
 
-	connectResp, err := http.Post(serverURL+"/_agent/connect", "application/json", nil)
+	body, err := json.Marshal(agentConnectRequest{
+		TargetURL: targetURL,
+	})
+	if err != nil {
+		fmt.Println("encode agent connect request:", err)
+		return
+	}
+
+	connectResp, err := http.Post(serverURL+"/_agent/connect", "application/json", bytes.NewReader(body))
 	if err != nil {
 		fmt.Println("agent connect failed:", err)
 		return
@@ -97,6 +112,7 @@ func runHTTP() {
 		return
 	}
 
+	fmt.Println("tunnel ID", payload.ID)
 	fmt.Println("public URL", payload.PublicURL)
 	fmt.Println("exposing local target", targetURL)
 }
