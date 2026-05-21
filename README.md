@@ -85,6 +85,26 @@ docker compose -f deploy/docker-compose.yml logs -f
 
 ## connect cli
 
+download the `tunnel` binary from github releases, or build locally:
+
+```sh
+go build -o tunnel ./cmd/tunnel
+```
+
+login once:
+
+```sh
+./tunnel login
+```
+
+then expose a local port:
+
+```sh
+./tunnel http 3000
+```
+
+or use env vars:
+
 ```sh
 TUNNEL_SERVER_URL=https://tunnel.ankurgajurel.com.np \
 TUNNEL_TOKEN=change-me \
@@ -95,6 +115,15 @@ the cli prints:
 
 ```txt
 https://quiet-forest.tunnel.ankurgajurel.com.np
+```
+
+## release binaries
+
+push a tag to build cli binaries:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## limits
