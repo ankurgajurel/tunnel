@@ -1,0 +1,29 @@
+services:
+  tunneld:
+    build:
+      context: ..
+      dockerfile: Dockerfile.tunneld
+    env_file:
+      - ../.env
+    restart: unless-stopped
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      - tunneld
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
