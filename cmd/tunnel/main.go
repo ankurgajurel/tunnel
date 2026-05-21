@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -39,11 +40,38 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
+	case "login":
+		runLogin()
 	case "http":
 		runHTTP()
 	default:
 		fmt.Println("unknown command", command)
 	}
+}
+
+func runLogin() {
+	reader := bufio.NewReader(os.Stdin)
+
+	serverURL := prompt(reader, "enter your server url: ")
+	token := prompt(reader, "enter your tunnel token: ")
+
+	cfg := config.Agent{
+		ServerURL: strings.TrimRight(serverURL, "/"),
+		Token:     token,
+	}
+	if err := config.SaveAgent(cfg); err != nil {
+		fmt.Println("save config failed:", err)
+		return
+	}
+
+	path, _ := config.AgentConfigPath()
+	fmt.Println("saved config", path)
+}
+
+func prompt(reader *bufio.Reader, label string) string {
+	fmt.Print(label)
+	value, _ := reader.ReadString('\n')
+	return strings.TrimSpace(value)
 }
 
 func runHTTP() {
