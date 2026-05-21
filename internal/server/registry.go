@@ -15,16 +15,19 @@ type Tunnel struct {
 	TargetURL string
 	PublicURL string
 	CreatedAt time.Time
+	Requests  chan *pendingRequest
 }
 
 type Registry struct {
 	mu          sync.RWMutex
 	nextID      int
+	byID        map[string]*Tunnel
 	bySubdomain map[string]*Tunnel
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
+		byID:        make(map[string]*Tunnel),
 		bySubdomain: make(map[string]*Tunnel),
 	}
 }
@@ -44,10 +47,20 @@ func (r *Registry) Register(subdomain string, targetURL string, publicURL string
 		TargetURL: targetURL,
 		PublicURL: publicURL,
 		CreatedAt: time.Now(),
+		Requests:  make(chan *pendingRequest, 64),
 	}
 
+	r.byID[tunnel.ID] = tunnel
 	r.bySubdomain[subdomain] = tunnel
 	return tunnel, nil
+}
+
+func (r *Registry) GetByID(id string) (*Tunnel, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	tunnel, ok := r.byID[id]
+	return tunnel, ok
 }
 
 func (r *Registry) Get(subdomain string) (*Tunnel, bool) {

@@ -7,15 +7,18 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ankurgajurel/tunnel/internal/config"
 )
 
 type Server struct {
-	cfg      config.Server
-	logger   *slog.Logger
-	registry *Registry
+	cfg       config.Server
+	logger    *slog.Logger
+	registry  *Registry
+	pendingMu sync.Mutex
+	pending   map[string]*pendingRequest
 }
 
 func New(cfg config.Server, logger *slog.Logger) *http.Server {
@@ -27,12 +30,16 @@ func New(cfg config.Server, logger *slog.Logger) *http.Server {
 		cfg:      cfg,
 		logger:   logger,
 		registry: NewRegistry(),
+		pending:  make(map[string]*pendingRequest),
 	}
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", server.healthHandler)
 	mux.HandleFunc("/_agent/connect", server.agentConnHandler)
+	mux.HandleFunc("/_agent/poll", server.pollHandler)
+	mux.HandleFunc("/_agent/respond", server.respondHandler)
+	mux.HandleFunc("/", server.publicHandler)
 
 	return &http.Server{
 		Addr:              cfg.HTTPAddr,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ankurgajurel/tunnel/internal/config"
+	"github.com/ankurgajurel/tunnel/internal/protocol"
 )
 
 type agentConnectResponse struct {
@@ -22,6 +24,10 @@ type agentConnectResponse struct {
 
 type agentConnectRequest struct {
 	TargetURL string `json:"target_url"`
+}
+
+type pollRequest struct {
+	TunnelID string `json:"tunnel_id"`
 }
 
 func main() {
@@ -86,15 +92,9 @@ func runHTTP() {
 
 	targetURL := "http://" + addr
 
-	body, err := json.Marshal(agentConnectRequest{
+	connectResp, err := postJSON(http.DefaultClient, serverURL+"/_agent/connect", agentConnectRequest{
 		TargetURL: targetURL,
 	})
-	if err != nil {
-		fmt.Println("encode agent connect request:", err)
-		return
-	}
-
-	connectResp, err := http.Post(serverURL+"/_agent/connect", "application/json", bytes.NewReader(body))
 	if err != nil {
 		fmt.Println("agent connect failed:", err)
 		return
@@ -115,4 +115,100 @@ func runHTTP() {
 	fmt.Println("tunnel ID", payload.ID)
 	fmt.Println("public URL", payload.PublicURL)
 	fmt.Println("exposing local target", targetURL)
+	fmt.Println("waiting for requests")
+
+	runTunnel(serverURL, payload.ID, targetURL)
+}
+
+func runTunnel(serverURL string, tunnelID string, targetURL string) {
+	client := &http.Client{Timeout: 70 * time.Second}
+
+	for {
+		req, ok, err := pollWork(client, serverURL, tunnelID)
+		if err != nil {
+			fmt.Println("poll failed:", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		if !ok {
+			continue
+		}
+
+		resp := forwardLocal(client, targetURL, req)
+		if err := sendResponse(client, serverURL, resp); err != nil {
+			fmt.Println("send response failed:", err)
+		}
+	}
+}
+
+func pollWork(client *http.Client, serverURL string, tunnelID string) (protocol.Request, bool, error) {
+	resp, err := postJSON(client, serverURL+"/_agent/poll", pollRequest{TunnelID: tunnelID})
+	if err != nil {
+		return protocol.Request{}, false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return protocol.Request{}, false, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return protocol.Request{}, false, fmt.Errorf("poll returned %s", resp.Status)
+	}
+
+	var req protocol.Request
+	if err := json.NewDecoder(resp.Body).Decode(&req); err != nil {
+		return protocol.Request{}, false, err
+	}
+
+	return req, true, nil
+}
+
+func forwardLocal(client *http.Client, targetURL string, req protocol.Request) protocol.Response {
+	localReq, err := http.NewRequest(req.Method, targetURL+req.Path, bytes.NewReader(req.Body))
+	if err != nil {
+		return protocol.Response{ID: req.ID, Error: "build local request failed"}
+	}
+
+	localReq.Header = req.Header.Clone()
+
+	resp, err := client.Do(localReq)
+	if err != nil {
+		return protocol.Response{ID: req.ID, Error: "local target is unreachable"}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return protocol.Response{ID: req.ID, Error: "read local response failed"}
+	}
+
+	return protocol.Response{
+		ID:     req.ID,
+		Status: resp.StatusCode,
+		Header: resp.Header,
+		Body:   body,
+	}
+}
+
+func sendResponse(client *http.Client, serverURL string, response protocol.Response) error {
+	resp, err := postJSON(client, serverURL+"/_agent/respond", response)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("respond returned %s", resp.Status)
+	}
+
+	return nil
+}
+
+func postJSON(client *http.Client, url string, value any) (*http.Response, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.Post(url, "application/json", bytes.NewReader(body))
 }
