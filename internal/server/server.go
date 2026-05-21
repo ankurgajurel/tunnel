@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -112,17 +113,22 @@ func (s *Server) agentConnHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) publicURLFor(subdomain string) string {
-	publicURL := strings.TrimRight(s.cfg.PublicURL, "/")
-	if s.cfg.BaseDomain == "localhost" {
-		return publicURL + "/t/" + subdomain
-	}
-
 	scheme := "https"
-	if strings.HasPrefix(publicURL, "http://") {
+	port := ""
+
+	publicURL, err := url.Parse(strings.TrimRight(s.cfg.PublicURL, "/"))
+	if err == nil {
+		if publicURL.Scheme != "" {
+			scheme = publicURL.Scheme
+		}
+		if publicURL.Port() != "" {
+			port = ":" + publicURL.Port()
+		}
+	} else if strings.HasPrefix(s.cfg.PublicURL, "http://") {
 		scheme = "http"
 	}
 
-	return fmt.Sprintf("%s://%s.%s", scheme, subdomain, s.cfg.BaseDomain)
+	return fmt.Sprintf("%s://%s.%s%s", scheme, subdomain, s.cfg.BaseDomain, port)
 }
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {

@@ -47,6 +47,34 @@ func TestFindTunnelFromSubdomainHost(t *testing.T) {
 	}
 }
 
+func TestPublicURLForLocalhostUsesSubdomainAndPort(t *testing.T) {
+	s := &Server{
+		cfg: config.Server{
+			BaseDomain: "localhost",
+			PublicURL:  "http://localhost:8080",
+		},
+	}
+
+	got := s.publicURLFor("demo")
+	if got != "http://demo.localhost:8080" {
+		t.Fatalf("public url = %q", got)
+	}
+}
+
+func TestPublicURLForDomainUsesBaseDomain(t *testing.T) {
+	s := &Server{
+		cfg: config.Server{
+			BaseDomain: "tunnel.example.com",
+			PublicURL:  "https://tunnel.example.com",
+		},
+	}
+
+	got := s.publicURLFor("demo")
+	if got != "https://demo.tunnel.example.com" {
+		t.Fatalf("public url = %q", got)
+	}
+}
+
 func testServer(baseDomain string) *Server {
 	return &Server{
 		cfg: config.Server{
