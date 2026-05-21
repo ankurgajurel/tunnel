@@ -28,6 +28,10 @@ func (s *Server) publicHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if s.shouldWarn(r) {
+		s.renderWarning(w, r)
+		return
+	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err != nil {
