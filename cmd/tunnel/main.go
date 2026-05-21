@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/ankurgajurel/tunnel/internal/config"
 	"github.com/ankurgajurel/tunnel/internal/protocol"
+	"nhooyr.io/websocket"
 )
 
 type agentConnectResponse struct {
@@ -145,7 +148,60 @@ func runHTTP() {
 	fmt.Println("exposing local target", targetURL)
 	fmt.Println("waiting for requests")
 
+	go runWorker(serverURL, cfg.Token, payload.ID)
 	runTunnel(serverURL, cfg.Token, payload.ID, targetURL)
+}
+
+func runWorker(serverURL string, token string, tunnelID string) {
+	for {
+		if err := connectWorker(serverURL, token, tunnelID); err != nil {
+			fmt.Println("websocket worker disconnected:", err)
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+func connectWorker(serverURL string, token string, tunnelID string) error {
+	workURL, err := workerURL(serverURL, tunnelID)
+	if err != nil {
+		return err
+	}
+
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	ctx := context.Background()
+	conn, _, err := websocket.Dial(ctx, workURL, &websocket.DialOptions{
+		HTTPHeader: header,
+	})
+	if err != nil {
+		return err
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	fmt.Println("websocket worker connected")
+	for {
+		if _, _, err := conn.Read(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+func workerURL(serverURL string, tunnelID string) (string, error) {
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		return "", err
+	}
+
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	} else {
+		u.Scheme = "ws"
+	}
+	u.Path = "/_agent/work"
+	u.RawQuery = "tunnel_id=" + url.QueryEscape(tunnelID)
+
+	return u.String(), nil
 }
 
 func runTunnel(serverURL string, token string, tunnelID string, targetURL string) {

@@ -39,6 +39,7 @@ func New(cfg config.Server, logger *slog.Logger) *http.Server {
 
 	mux.HandleFunc("/healthz", server.healthHandler)
 	mux.HandleFunc("/_agent/connect", server.agentConnHandler)
+	mux.HandleFunc("/_agent/work", server.workHandler)
 	mux.HandleFunc("/_agent/poll", server.pollHandler)
 	mux.HandleFunc("/_agent/respond", server.respondHandler)
 	mux.HandleFunc("/_tunnel/continue", server.continueHandler)
