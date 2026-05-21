@@ -1,25 +1,37 @@
 package server
 
 import (
-	"fmt"
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/ankurgajurel/tunnel/internal/config"
 )
 
-func New(addr string, logger *slog.Logger) *http.Server {
+type Server struct {
+	cfg    config.Server
+	logger *slog.Logger
+}
+
+func New(cfg config.Server, logger *slog.Logger) *http.Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	logger.Debug("creating http server", "addr", addr)
+	server := &Server{
+		cfg:    cfg,
+		logger: logger,
+	}
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/healthz", healthHandler)
+	mux.HandleFunc("/healthz", server.healthHandler)
+	mux.HandleFunc("/_agent/connect", server.agentConnHandler)
 
 	return &http.Server{
-		Addr:              addr,
+		Addr:              cfg.HTTPAddr,
 		Handler:           logRequests(logger, mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -27,15 +39,40 @@ func New(addr string, logger *slog.Logger) *http.Server {
 	}
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+type agentConnectResponse struct {
+	PublicURL string `json:"public_url"`
+}
+
+func (s *Server) agentConnHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	publicURL := strings.TrimRight(s.cfg.PublicURL, "/")
+	writeJSON(w, http.StatusOK, agentConnectResponse{
+		PublicURL: publicURL,
+	})
+}
+
+func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintln(w, `{"ok":true}`)
+	w.WriteHeader(status)
+
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		slog.Default().Error("write json response", "error", err)
+	}
 }
 
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {

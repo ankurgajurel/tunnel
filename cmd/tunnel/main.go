@@ -1,12 +1,21 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/ankurgajurel/tunnel/internal/config"
 )
+
+type agentConnectResponse struct {
+	PublicURL string `json:"public_url"`
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -25,6 +34,25 @@ func main() {
 }
 
 func runHTTP() {
+	cfg := config.LoadAgent()
+	serverURL := strings.TrimRight(cfg.ServerURL, "/")
+
+	fmt.Println("server URL", serverURL)
+
+	resp, err := http.Get(serverURL + "/healthz")
+	if err != nil {
+		fmt.Println("tunneld not reachable: ", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println("tunnel health check failed: ", resp.Status)
+		return
+	}
+
+	fmt.Println("tunneld is reachable")
+
 	if len(os.Args) < 3 {
 		fmt.Println("usage: tunnel http <port>")
 		return
@@ -49,5 +77,26 @@ func runHTTP() {
 	}
 	defer conn.Close()
 
-	fmt.Println("exposing local port", port)
+	targetURL := "http://" + addr
+
+	connectResp, err := http.Post(serverURL+"/_agent/connect", "application/json", nil)
+	if err != nil {
+		fmt.Println("agent connect failed:", err)
+		return
+	}
+	defer connectResp.Body.Close()
+
+	if connectResp.StatusCode != http.StatusOK {
+		fmt.Println("agent connect failed:", connectResp.Status)
+		return
+	}
+
+	var payload agentConnectResponse
+	if err := json.NewDecoder(connectResp.Body).Decode(&payload); err != nil {
+		fmt.Println("decode agent connect response:", err)
+		return
+	}
+
+	fmt.Println("public URL", payload.PublicURL)
+	fmt.Println("exposing local target", targetURL)
 }

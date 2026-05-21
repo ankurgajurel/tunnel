@@ -12,9 +12,13 @@ func main() {
 	cfg := config.LoadServer()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	srv := server.New(cfg.HTTPAddr, logger)
+	srv := server.New(cfg, logger)
 
-	logger.Info("server is listening", "addr", cfg.HTTPAddr)
+	logger.Info("server is listening",
+		"addr", cfg.HTTPAddr,
+		"base_domain", cfg.BaseDomain,
+		"public_url", cfg.PublicURL,
+	)
 
 	err := srv.ListenAndServe()
 	if err != nil {
