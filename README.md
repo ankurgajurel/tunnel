@@ -88,19 +88,29 @@ docker compose -f deploy/docker-compose.yml logs -f
 download the `tunnel` binary from github releases, or build locally:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/ankurgajurel/tunnel/master/scripts/install.sh | sh
+```
+
+uninstall:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ankurgajurel/tunnel/master/scripts/uninstall.sh | sh
+```
+
+```sh
 go build -o tunnel ./cmd/tunnel
 ```
 
 login once:
 
 ```sh
-./tunnel login
+tunnel login
 ```
 
 then expose a local port:
 
 ```sh
-./tunnel http 3000
+tunnel http 3000
 ```
 
 or use env vars:
@@ -122,8 +132,7 @@ https://quiet-forest.tunnel.ankurgajurel.com.np
 push a tag to build cli binaries:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+make release VERSION=v0.1.0
 ```
 
 ## limits
@@ -134,3 +143,4 @@ git push origin v0.1.0
 - no dashboard
 - no tcp tunnels
 - agent transport is still simple http polling
+
