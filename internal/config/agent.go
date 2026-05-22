@@ -57,6 +57,19 @@ func SaveAgent(cfg Agent) error {
 	return os.WriteFile(path, append(body, '\n'), 0o600)
 }
 
+func DeleteAgent() error {
+	path, err := AgentConfigPath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	return nil
+}
+
 func AgentConfigPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

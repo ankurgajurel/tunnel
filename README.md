@@ -107,10 +107,28 @@ login once:
 tunnel login
 ```
 
+check what the cli will use:
+
+```sh
+tunnel config
+```
+
 then expose a local port:
 
 ```sh
 tunnel http 3000
+```
+
+or override config for one run:
+
+```sh
+tunnel http 3000 --server-url http://localhost:8080 --token secret --workers 2
+```
+
+clear saved cli config:
+
+```sh
+tunnel logout
 ```
 
 or use env vars:

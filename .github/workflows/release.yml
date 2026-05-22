@@ -47,7 +47,7 @@ jobs:
         run: |
           mkdir -p dist
           name="tunnel-${GOOS}-${GOARCH}${{ matrix.ext }}"
-          go build -trimpath -ldflags="-s -w" -o "dist/${name}" ./cmd/tunnel
+          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/${name}" ./cmd/tunnel
 
       - name: upload release asset
         uses: softprops/action-gh-release@v2
